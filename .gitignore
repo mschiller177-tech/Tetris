@@ -54,11 +54,16 @@ app.*.map.json
 # Fonts (large binary files – add your own)
 assets/fonts/*.ttf
 assets/fonts/*.otf
+!assets/fonts/.gitkeep
 
 # Audio assets (add your own)
 assets/audio/*.mp3
 assets/audio/*.ogg
 assets/audio/*.wav
+!assets/audio/.gitkeep
+
+# Image assets
+!assets/images/.gitkeep
 
 # iOS
 ios/Flutter/flutter_export_environment.sh

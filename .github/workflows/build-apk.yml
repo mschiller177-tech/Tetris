@@ -1,0 +1,100 @@
+name: Build Demo APK
+
+on:
+  # Run automatically on every push to this branch
+  push:
+    branches:
+      - claude/multiplayer-tetris-app-tFw1N
+  # Also allow manual trigger from GitHub UI
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    name: Build Android APK (Demo Mode)
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Checkout code ──────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Install Java (required for Android build) ──────────────
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      # ── 3. Install Flutter ────────────────────────────────────────
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          channel: 'stable'
+          cache: true
+
+      # ── 4. Download Orbitron font from Google Fonts ───────────────
+      - name: Download Orbitron font
+        run: |
+          mkdir -p assets/fonts
+          # Download Orbitron from Google Fonts API
+          curl -sL "https://fonts.gstatic.com/s/orbitron/v31/yMJMMIlzdpvBhQQL_SC3X9yhF25-T1nyGy6BoWgz.woff2" -o /tmp/orbitron.woff2 || true
+          # Try to get TTF via Google Fonts zip
+          curl -sL "https://fonts.google.com/download?family=Orbitron" -o /tmp/orbitron.zip || true
+          if [ -f /tmp/orbitron.zip ]; then
+            unzip -o /tmp/orbitron.zip -d /tmp/orbitron_extracted/ || true
+            find /tmp/orbitron_extracted/ -name "*.ttf" | while read f; do
+              cp "$f" assets/fonts/
+            done
+          fi
+          # Fallback: create dummy TTF files so pubspec doesn't error
+          if [ ! -f assets/fonts/Orbitron-Regular.ttf ]; then
+            # Copy a system font as placeholder
+            cp /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf assets/fonts/Orbitron-Regular.ttf 2>/dev/null || \
+            cp /usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf assets/fonts/Orbitron-Regular.ttf 2>/dev/null || \
+            dd if=/dev/zero bs=1 count=0 of=assets/fonts/Orbitron-Regular.ttf 2>/dev/null || touch assets/fonts/Orbitron-Regular.ttf
+          fi
+          if [ ! -f assets/fonts/Orbitron-Bold.ttf ]; then
+            cp /usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf assets/fonts/Orbitron-Bold.ttf 2>/dev/null || \
+            cp /usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf assets/fonts/Orbitron-Bold.ttf 2>/dev/null || \
+            cp assets/fonts/Orbitron-Regular.ttf assets/fonts/Orbitron-Bold.ttf 2>/dev/null || touch assets/fonts/Orbitron-Bold.ttf
+          fi
+          ls -lh assets/fonts/
+
+      # ── 5. Get dependencies ───────────────────────────────────────
+      - name: Flutter pub get
+        run: flutter pub get
+
+      # ── 6. Analyze code ───────────────────────────────────────────
+      - name: Flutter analyze
+        run: flutter analyze --no-fatal-infos
+        continue-on-error: false
+
+      # ── 7. Build debug APK (no signing needed) ────────────────────
+      - name: Build APK (debug)
+        run: flutter build apk --debug --flavor='' 2>/dev/null || flutter build apk --debug
+
+      # ── 8. Upload APK as downloadable artifact ────────────────────
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tetris-demo-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 7
+
+      # ── 9. Print download instructions ───────────────────────────
+      - name: Print instructions
+        run: |
+          echo "=========================================="
+          echo "  APK BUILD SUCCESSFUL!"
+          echo "=========================================="
+          echo ""
+          echo "  Download: Go to GitHub Actions"
+          echo "  → This workflow run"
+          echo "  → Artifacts: tetris-demo-apk"
+          echo ""
+          echo "  Install on Android:"
+          echo "  1. Download the APK on your phone"
+          echo "  2. Enable 'Unknown Sources' in Settings"
+          echo "  3. Open the APK file and install"
+          echo "=========================================="

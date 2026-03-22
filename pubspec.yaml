@@ -64,7 +64,11 @@ flutter:
   assets:
     - assets/images/
     - assets/audio/
+    - assets/fonts/
 
+  # Orbitron font – download from fonts.google.com/specimen/Orbitron
+  # and place the .ttf files in assets/fonts/ before building for production.
+  # The app runs without it (falls back to system font).
   fonts:
     - family: Orbitron
       fonts:
