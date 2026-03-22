@@ -1,38 +1,63 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../constants/demo_mode.dart';
 import 'firestore_service.dart';
 
-/// Provider that exposes the current Firebase auth state as a stream
-final authStateProvider = StreamProvider<User?>((ref) {
+// ── Demo mode: fake auth stream ──────────────────────────────────────────────
+
+/// A simple notifier that simulates a signed-in state without Firebase.
+final _demoSignedInProvider = StateProvider<bool>((ref) => false);
+
+/// Unified auth-state stream:
+///   - Demo mode → emits a non-null sentinel string when "logged in"
+///   - Production → Firebase User stream
+final authStateProvider = StreamProvider<Object?>((ref) {
+  if (kDemoMode) {
+    final signedIn = ref.watch(_demoSignedInProvider);
+    // Emit a non-null object when signed in (the router just checks != null)
+    return Stream.value(signedIn ? const _DemoUser() : null);
+  }
   return FirebaseAuth.instance.authStateChanges();
 });
 
-/// Provider for the current user (null if not logged in)
+/// Provider for the current Firebase user (null in demo mode)
 final currentUserProvider = Provider<User?>((ref) {
-  return ref.watch(authStateProvider).valueOrNull;
+  if (kDemoMode) return null;
+  return ref.watch(authStateProvider).valueOrNull as User?;
+});
+
+/// Provider exposing whether someone is "signed in" (works in both modes)
+final isSignedInProvider = Provider<bool>((ref) {
+  if (kDemoMode) return ref.watch(_demoSignedInProvider);
+  return ref.watch(authStateProvider).valueOrNull != null;
 });
 
 /// Auth service provider
 final authServiceProvider = Provider<AuthService>((ref) {
-  return AuthService(ref.read(firestoreServiceProvider));
+  return AuthService(ref);
 });
 
 class AuthService {
-  AuthService(this._firestoreService);
+  AuthService(this._ref);
 
-  final FirestoreService _firestoreService;
+  final Ref _ref;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn();
 
-  /// Sign in with Google and create/update Firestore user document
-  Future<User?> signInWithGoogle() async {
-    try {
-      // Trigger Google Sign-In flow
-      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-      if (googleUser == null) return null; // User cancelled
+  /// Sign in – demo mode sets a flag, production uses Google/Firebase.
+  Future<void> signInWithGoogle() async {
+    if (kDemoMode) {
+      // Simulate a short loading delay so the splash animation is visible
+      await Future.delayed(const Duration(milliseconds: 600));
+      _ref.read(_demoSignedInProvider.notifier).state = true;
+      return;
+    }
 
-      // Obtain auth credentials
+    try {
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) return;
+
       final GoogleSignInAuthentication googleAuth =
           await googleUser.authentication;
       final credential = GoogleAuthProvider.credential(
@@ -40,42 +65,34 @@ class AuthService {
         idToken: googleAuth.idToken,
       );
 
-      // Sign in to Firebase
-      final UserCredential userCredential =
+      final UserCredential result =
           await _auth.signInWithCredential(credential);
-      final User? user = userCredential.user;
+      final user = result.user;
 
-      if (user != null) {
-        // Create or update Firestore document on first login
-        final isNewUser = userCredential.additionalUserInfo?.isNewUser ?? false;
-        if (isNewUser) {
-          await _firestoreService.createUserDocument(user);
-        }
+      if (user != null && (result.additionalUserInfo?.isNewUser ?? false)) {
+        await _ref.read(firestoreServiceProvider).createUserDocument(user);
       }
-
-      return user;
     } catch (e) {
       throw AuthException('Google Sign-In failed: $e');
     }
   }
 
-  /// Sign out from Firebase and Google
+  /// Sign out
   Future<void> signOut() async {
-    try {
-      await Future.wait([
-        _auth.signOut(),
-        _googleSignIn.signOut(),
-      ]);
-    } catch (e) {
-      throw AuthException('Sign-out failed: $e');
+    if (kDemoMode) {
+      _ref.read(_demoSignedInProvider.notifier).state = false;
+      return;
     }
+    await Future.wait([
+      _auth.signOut(),
+      _googleSignIn.signOut(),
+    ]);
   }
+}
 
-  /// Get the currently signed-in user
-  User? get currentUser => _auth.currentUser;
-
-  /// Check if user is signed in
-  bool get isSignedIn => _auth.currentUser != null;
+/// Sentinel object used in demo mode to represent a signed-in user.
+class _DemoUser {
+  const _DemoUser();
 }
 
 class AuthException implements Exception {

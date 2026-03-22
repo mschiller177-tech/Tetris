@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'app/router.dart';
 import 'app/theme.dart';
+import 'core/constants/demo_mode.dart';
 import 'firebase_options.dart';
 
 Future<void> main() async {
@@ -15,7 +16,7 @@ Future<void> main() async {
     DeviceOrientation.portraitDown,
   ]);
 
-  // Set system UI overlay style for dark theme
+  // Status bar style for dark theme
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -25,13 +26,14 @@ Future<void> main() async {
     ),
   );
 
-  // Initialize Firebase
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  // Only initialise Firebase when NOT in demo mode
+  if (!kDemoMode) {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  }
 
   runApp(
-    // Riverpod scope wraps the entire app
     const ProviderScope(
       child: TetrisApp(),
     ),

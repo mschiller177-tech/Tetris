@@ -27,20 +27,20 @@ class AppRoutes {
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authStateProvider);
+  final isSignedIn = ref.watch(isSignedInProvider);
 
   return GoRouter(
     initialLocation: AppRoutes.splash,
     redirect: (context, state) {
-      final isLoggedIn = authState.valueOrNull != null;
       final isSplash = state.matchedLocation == AppRoutes.splash;
       final isAuth = state.matchedLocation == AppRoutes.auth;
 
-      // Stay on splash while loading
+      // Stay on splash while auth state is still loading
       if (authState.isLoading) return isSplash ? null : AppRoutes.splash;
 
-      // Redirect based on auth state
-      if (!isLoggedIn && !isAuth && !isSplash) return AppRoutes.auth;
-      if (isLoggedIn && (isAuth || isSplash)) return AppRoutes.home;
+      // Redirect based on sign-in state
+      if (!isSignedIn && !isAuth && !isSplash) return AppRoutes.auth;
+      if (isSignedIn && (isAuth || isSplash)) return AppRoutes.home;
 
       return null;
     },

@@ -3,12 +3,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../app/router.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/constants/demo_mode.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/firestore_service.dart';
+import '../../core/services/mock_data.dart';
 import '../../shared/models/user_model.dart';
 
 /// Stream provider for the current user's Firestore document
 final currentUserDocProvider = StreamProvider<UserModel?>((ref) {
+  if (kDemoMode) {
+    // Return mock user immediately without any network call
+    return Stream.value(MockData.currentUser);
+  }
   final user = ref.watch(currentUserProvider);
   if (user == null) return Stream.value(null);
   return ref.read(firestoreServiceProvider).userStream(user.uid);
@@ -28,7 +34,7 @@ class ProfileScreen extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.logout, color: AppColors.textSecondary),
-            onPressed: () => _signOut(context, ref),
+            onPressed: () => _signOut(ref),
           ),
         ],
       ),
@@ -45,12 +51,11 @@ class ProfileScreen extends ConsumerWidget {
           return _ProfileContent(user: user);
         },
       ),
-      // Bottom navigation
-      bottomNavigationBar: _BottomNav(currentIndex: 0),
+      bottomNavigationBar: const _BottomNav(currentIndex: 0),
     );
   }
 
-  Future<void> _signOut(BuildContext context, WidgetRef ref) async {
+  Future<void> _signOut(WidgetRef ref) async {
     await ref.read(authServiceProvider).signOut();
   }
 }
@@ -67,6 +72,38 @@ class _ProfileContent extends StatelessWidget {
       child: Column(
         children: [
           const SizedBox(height: 16),
+
+          // ── Demo mode banner ────────────────────────────────────────
+          if (kDemoMode)
+            Container(
+              margin: const EdgeInsets.only(bottom: 20),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppColors.accentPurple.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    color: AppColors.accentPurple.withOpacity(0.5)),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.science_outlined,
+                      color: AppColors.accentPurple, size: 16),
+                  SizedBox(width: 8),
+                  Text(
+                    'DEMO MODE – kein Firebase nötig',
+                    style: TextStyle(
+                      fontFamily: 'Orbitron',
+                      fontSize: 10,
+                      color: AppColors.accentPurple,
+                      letterSpacing: 1.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
           // ── Avatar ───────────────────────────────────────────────
           Container(
             width: 100,
@@ -84,12 +121,8 @@ class _ProfileContent extends StatelessWidget {
             ),
             child: ClipOval(
               child: user.photoURL != null
-                  ? Image.network(
-                      user.photoURL!,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          const _DefaultAvatar(),
-                    )
+                  ? Image.network(user.photoURL!, fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const _DefaultAvatar())
                   : const _DefaultAvatar(),
             ),
           ),
@@ -176,7 +209,7 @@ class _ProfileContent extends StatelessWidget {
                 child: _ActionCard(
                   icon: Icons.group,
                   label: 'FRIENDS',
-                  subtitle: 'Social',
+                  subtitle: '${user.friends.length} online',
                   color: AppColors.accentGreen,
                   onTap: () => context.push(AppRoutes.friends),
                 ),
@@ -186,7 +219,8 @@ class _ProfileContent extends StatelessWidget {
                 child: _ActionCard(
                   icon: Icons.shield,
                   label: 'CLAN',
-                  subtitle: user.clanId != null ? 'My Clan' : 'Join / Create',
+                  subtitle:
+                      user.clanId != null ? 'My Clan' : 'Join / Create',
                   color: AppColors.tetrominoO,
                   onTap: () => context.push(AppRoutes.clan),
                 ),
@@ -206,7 +240,8 @@ class _DefaultAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: AppColors.surfaceVariant,
-      child: const Icon(Icons.person, size: 48, color: AppColors.textSecondary),
+      child: const Icon(Icons.person,
+          size: 48, color: AppColors.textSecondary),
     );
   }
 }
@@ -219,7 +254,6 @@ class _XpBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final progress = xp / 1000.0;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -376,28 +410,30 @@ class _ActionCard extends StatelessWidget {
           children: [
             Icon(icon, color: color, size: 28),
             const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontFamily: 'Orbitron',
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: color,
-                    letterSpacing: 1.5,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontFamily: 'Orbitron',
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: color,
+                      letterSpacing: 1.5,
+                    ),
                   ),
-                ),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    fontFamily: 'Orbitron',
-                    fontSize: 10,
-                    color: AppColors.textSecondary,
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontFamily: 'Orbitron',
+                      fontSize: 10,
+                      color: AppColors.textSecondary,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ],
         ),
@@ -439,16 +475,12 @@ class _BottomNav extends StatelessWidget {
           switch (index) {
             case 0:
               context.go(AppRoutes.home);
-              break;
             case 1:
               context.go(AppRoutes.multiplayer);
-              break;
             case 2:
               context.go(AppRoutes.friends);
-              break;
             case 3:
               context.go(AppRoutes.clan);
-              break;
           }
         },
         items: const [
@@ -458,7 +490,8 @@ class _BottomNav extends StatelessWidget {
               icon: Icon(Icons.sports_esports), label: 'PLAY'),
           BottomNavigationBarItem(
               icon: Icon(Icons.group), label: 'FRIENDS'),
-          BottomNavigationBarItem(icon: Icon(Icons.shield), label: 'CLAN'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.shield), label: 'CLAN'),
         ],
       ),
     );
