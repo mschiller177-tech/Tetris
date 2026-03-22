@@ -1,0 +1,100 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ────────────────────────────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isFriend(uid) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)/friends/$(uid));
+    }
+
+    // ── Users ─────────────────────────────────────────────────────────────
+    match /users/{uid} {
+      // Anyone signed in can read public profiles
+      allow read: if isSignedIn();
+
+      // Only the owner can write their own document
+      allow create: if isOwner(uid);
+      allow update: if isOwner(uid) &&
+        // Prevent users from manually inflating stats
+        !('wins' in request.resource.data.diff(resource.data).affectedKeys()) &&
+        !('losses' in request.resource.data.diff(resource.data).affectedKeys()) &&
+        !('totalGames' in request.resource.data.diff(resource.data).affectedKeys()) &&
+        !('xp' in request.resource.data.diff(resource.data).affectedKeys()) &&
+        !('level' in request.resource.data.diff(resource.data).affectedKeys());
+
+      allow delete: if false; // Never delete user documents
+
+      // ── Friend Requests ──────────────────────────────────────────────────
+      match /friendRequests/{fromUid} {
+        allow read: if isOwner(uid);
+        allow create: if isSignedIn() && request.auth.uid == fromUid;
+        allow delete: if isOwner(uid); // Accept or decline
+      }
+
+      // ── Friends sub-collection ─────────────────────────────────────────
+      match /friends/{friendUid} {
+        allow read: if isOwner(uid) || isOwner(friendUid);
+        // Only written by Cloud Functions (via Admin SDK) after request accepted
+        allow write: if false;
+      }
+    }
+
+    // ── Clans ─────────────────────────────────────────────────────────────
+    match /clans/{clanId} {
+      allow read: if isSignedIn();
+
+      // Only create if user has at least 3 wins
+      allow create: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.wins >= 3 &&
+        request.resource.data.leaderId == request.auth.uid &&
+        request.resource.data.members.size() == 1;
+
+      // Leader and co-leaders can update clan settings
+      allow update: if isSignedIn() && (
+        resource.data.leaderId == request.auth.uid ||
+        request.auth.uid in resource.data.coLeaders
+      );
+
+      // Only leader can delete the clan
+      allow delete: if isSignedIn() &&
+        resource.data.leaderId == request.auth.uid;
+    }
+
+    // ── Matches (historical records) ───────────────────────────────────────
+    match /matches/{matchId} {
+      allow read: if isSignedIn() && (
+        resource.data.player1Uid == request.auth.uid ||
+        resource.data.player2Uid == request.auth.uid
+      );
+      // Match creation and updates are handled by Cloud Functions
+      allow write: if false;
+    }
+
+    // ── Chats ──────────────────────────────────────────────────────────────
+    match /chats/{chatId} {
+      allow read, write: if isSignedIn() &&
+        request.auth.uid in resource.data.participants;
+
+      match /messages/{msgId} {
+        allow read: if isSignedIn() &&
+          request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+        allow create: if isSignedIn() &&
+          request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants &&
+          request.resource.data.senderId == request.auth.uid;
+        allow update: if isSignedIn() &&
+          // Only allow marking messages as read
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+        allow delete: if false;
+      }
+    }
+  }
+}
